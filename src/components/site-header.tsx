@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
+import { ThemeToggle } from "@/components/theme-toggle"
 import { logout } from "@/lib/demo-auth"
 
 export function SiteHeader() {
@@ -21,6 +22,7 @@ export function SiteHeader() {
         />
         <h1 className="text-base font-medium">Баг бүртгэлийн хүсэлтүүд</h1>
         <div className="ml-auto flex items-center gap-2">
+          <ThemeToggle />
           <Button
             size="sm"
             variant="outline"
