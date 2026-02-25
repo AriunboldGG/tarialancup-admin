@@ -19,6 +19,7 @@ const DEMO_REQUESTS: TeamRegistrationRequest[] = [
     contactName: "Бат-Эрдэнэ",
     phone: "99112233",
     status: "pending",
+    transactionCode: "TXN-2026-0001",
     members: [
       { id: "m_1", fullName: "Цэлмэг Алдар", heightCm: 170, position: "Довтлогч", personalNumber: "889900" },
       { id: "m_2", fullName: "Содон Төгс", heightCm: 173, position: "Хамгаалагч", personalNumber: "101010" },
@@ -36,6 +37,7 @@ const DEMO_REQUESTS: TeamRegistrationRequest[] = [
     contactName: "Төгөлдөр",
     phone: "88110022",
     status: "pending",
+    transactionCode: "TXN-2026-0002",
     members: [
       { id: "m_4", fullName: "Ган-Очир", heightCm: 182, position: "Төвийн тоглогч", personalNumber: "770011" },
       { id: "m_5", fullName: "Наранболд", heightCm: 176, position: "Хамгаалагч", personalNumber: "770012" },
@@ -52,6 +54,7 @@ const DEMO_REQUESTS: TeamRegistrationRequest[] = [
     contactName: "Саруул",
     phone: "99003344",
     status: "pending",
+    transactionCode: "TXN-2026-0003",
     members: [
       { id: "m_6", fullName: "Солонго", heightCm: 168, position: "Дайрагч", personalNumber: "660021" },
       { id: "m_7", fullName: "Мөнхзаяа", heightCm: 172, position: "Сеттер", personalNumber: "660022" },
@@ -69,6 +72,7 @@ const DEMO_REQUESTS: TeamRegistrationRequest[] = [
     contactName: "Билгүүн",
     phone: "95112233",
     status: "pending",
+    transactionCode: "TXN-2026-0004",
     members: [
       { id: "m_9", fullName: "Тэмүүлэн", heightCm: 178, position: "Довтлогч", personalNumber: "550031" },
       { id: "m_10", fullName: "Эрдэнэбаатар", heightCm: 181, position: "Хагас хамгаалагч", personalNumber: "550032" },
@@ -85,6 +89,7 @@ const DEMO_REQUESTS: TeamRegistrationRequest[] = [
     contactName: "Ариунболд",
     phone: "99001122",
     status: "pending",
+    transactionCode: "TXN-2026-0005",
     members: [
       { id: "m_11", fullName: "Болор", heightCm: 160, sportRank: "Спортын зэрэггүй", personalNumber: "440041" },
       { id: "m_12", fullName: "Анударь", heightCm: 162, sportRank: "Спортын зэрэггүй", personalNumber: "440042" },
