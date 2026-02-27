@@ -1,3 +1,6 @@
+"use client"
+
+import * as React from "react"
 import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
 import { TeamRequestsPage, type TeamRegistrationRequest } from "@/components/team-requests-page"
@@ -95,9 +98,34 @@ const DEMO_REQUESTS: TeamRegistrationRequest[] = [
       { id: "m_12", fullName: "Анударь", heightCm: 162, sportRank: "Спортын зэрэггүй", personalNumber: "440042" },
     ],
   },
+  {
+    id: "req_6",
+    teamName: "Дартс баг",
+    sportType: "Дартс",
+    playingYears: "2020-2025",
+    className: "11 А анги",
+    graduatedYear: 2024,
+    gender: "Холимог",
+    contactName: "Энхбат",
+    phone: "99005566",
+    status: "pending",
+    transactionCode: "TXN-2026-0006",
+    members: [
+      { id: "m_13", fullName: "Батбаяр", heightCm: 175, personalNumber: "330051" },
+      { id: "m_14", fullName: "Мөнхбат", heightCm: 172, personalNumber: "330052" },
+    ],
+  },
 ]
 
 export default function Page() {
+  const [selectedSport, setSelectedSport] = React.useState<string>("all")
+
+  const handleAddTeam = () => {
+    if ((window as any).__openAddTeamForm) {
+      ;(window as any).__openAddTeamForm()
+    }
+  }
+
   return (
     <AuthGuard redirectTo="/">
     <SidebarProvider
@@ -108,11 +136,20 @@ export default function Page() {
         } as React.CSSProperties
       }
     >
-      <AppSidebar variant="inset" />
+      <AppSidebar 
+        variant="inset" 
+        selectedSport={selectedSport}
+        onSportChange={setSelectedSport}
+        onAddTeam={handleAddTeam}
+      />
       <SidebarInset>
         <SiteHeader />
         <div className="flex flex-1 flex-col">
-            <TeamRequestsPage requests={DEMO_REQUESTS} />
+            <TeamRequestsPage 
+              requests={DEMO_REQUESTS} 
+              sportFilter={selectedSport}
+              onAddTeam={handleAddTeam}
+            />
         </div>
       </SidebarInset>
     </SidebarProvider>

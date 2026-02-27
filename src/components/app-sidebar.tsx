@@ -15,15 +15,27 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Button } from "@/components/ui/button"
+import { IconPlus } from "@tabler/icons-react"
 import { getSession } from "@/lib/demo-auth"
 
 const DEFAULT_USER = {
   name: "Demo Admin",
   email: "admin@demo.com",
-    avatar: "/avatars/shadcn.jpg",
+  avatar: "/avatars/shadcn.jpg",
 }
 
-export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+export function AppSidebar({ 
+  selectedSport,
+  onSportChange,
+  onAddTeam,
+  ...props 
+}: React.ComponentProps<typeof Sidebar> & {
+  selectedSport?: string
+  onSportChange?: (sport: string) => void
+  onAddTeam?: () => void
+}) {
   const [user, setUser] = React.useState(DEFAULT_USER)
 
   React.useEffect(() => {
@@ -63,6 +75,40 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             },
           ]}
         />
+        <div className="px-2 pt-4">
+          <Tabs
+            value={selectedSport || "all"}
+            onValueChange={(value) => onSportChange?.(value)}
+            orientation="vertical"
+          >
+            <TabsList variant="line" className="w-full flex-col items-start">
+              <TabsTrigger value="all" className="w-full justify-start">
+                Бүгд
+              </TabsTrigger>
+              <TabsTrigger value="Сагсан бөмбөг" className="w-full justify-start">
+                Сагсан бөмбөг
+              </TabsTrigger>
+              <TabsTrigger value="Ширээний теннис" className="w-full justify-start">
+                Теннис
+              </TabsTrigger>
+              <TabsTrigger value="Дартс" className="w-full justify-start">
+                Дартс
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+          {selectedSport === "all" && onAddTeam && (
+            <div className="px-2 pt-3">
+              <Button
+                variant="default"
+                className="w-full"
+                onClick={onAddTeam}
+              >
+                <IconPlus className="size-4" />
+                Баг нэмэх
+              </Button>
+            </div>
+          )}
+        </div>
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={user} />
