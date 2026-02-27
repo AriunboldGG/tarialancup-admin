@@ -72,7 +72,7 @@ export default function Home() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
-            </div>
+        </div>
             <div className="grid gap-2">
               <Label htmlFor="password">Password</Label>
               <Input
@@ -111,7 +111,7 @@ export default function Home() {
               >
                 Use demo credentials
               </Button>
-            </div>
+        </div>
           </form>
         </CardContent>
       </Card>

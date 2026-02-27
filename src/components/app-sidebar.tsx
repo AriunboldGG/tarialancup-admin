@@ -20,7 +20,7 @@ import { getSession } from "@/lib/demo-auth"
 const DEFAULT_USER = {
   name: "Demo Admin",
   email: "admin@demo.com",
-  avatar: "/avatars/shadcn.jpg",
+    avatar: "/avatars/shadcn.jpg",
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
