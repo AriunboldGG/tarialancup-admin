@@ -30,7 +30,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
-import { logout } from "@/lib/demo-auth"
+import { logout } from "@/lib/auth"
 
 export function NavUser({
   user,

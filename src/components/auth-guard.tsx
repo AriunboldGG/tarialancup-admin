@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 
-import { getSession } from "@/lib/demo-auth"
+import { onUserChanged } from "@/lib/auth"
 
 export function AuthGuard({
   children,
@@ -16,12 +16,14 @@ export function AuthGuard({
   const [ready, setReady] = React.useState(false)
 
   React.useEffect(() => {
-    const session = getSession()
-    if (!session) {
-      router.replace(redirectTo)
-      return
-    }
-    setReady(true)
+    const unsubscribe = onUserChanged((user) => {
+      if (!user) {
+        router.replace(redirectTo)
+      } else {
+        setReady(true)
+      }
+    })
+    return unsubscribe
   }, [router, redirectTo])
 
   if (!ready) {

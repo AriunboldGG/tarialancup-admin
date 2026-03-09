@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { ensureDemoUser, getSession, login } from "@/lib/demo-auth"
+import { login, onUserChanged } from "@/lib/auth"
 
 const loginSchema = z.object({
   email: z.string().email("Enter a valid email"),
@@ -23,12 +23,14 @@ export default function Home() {
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const [fieldError, setFieldError] = React.useState<string | null>(null)
 
-  const demo = React.useMemo(() => ({ email: "admin@demo.com", password: "admin123" }), [])
-
+  // if user already logged in, redirect
   React.useEffect(() => {
-    ensureDemoUser()
-    const session = getSession()
-    if (session) router.replace("/dashboard")
+    const unsubscribe = onUserChanged((user) => {
+      if (user) {
+        router.replace("/dashboard")
+      }
+    })
+    return unsubscribe
   }, [router])
 
   async function onSubmit(e: React.FormEvent) {
@@ -43,11 +45,13 @@ export default function Home() {
 
     try {
       setIsSubmitting(true)
-      login(parsed.data.email, parsed.data.password)
+      await login(parsed.data.email, parsed.data.password)
       toast.success("Welcome back!")
       router.push("/dashboard")
     } catch (err) {
-      setFieldError(err instanceof Error ? err.message : "Login failed.")
+      setFieldError(
+        err instanceof Error ? err.message : "Login failed."
+      )
     } finally {
       setIsSubmitting(false)
     }
@@ -93,25 +97,7 @@ export default function Home() {
               {isSubmitting ? "Signing in..." : "Sign in"}
             </Button>
 
-            <div className="rounded-md border bg-background p-3 text-sm">
-              <div className="font-medium">Demo user (auto-created)</div>
-              <div className="text-muted-foreground mt-1">
-                Email: <span className="font-mono">{demo.email}</span>
-                <br />
-                Password: <span className="font-mono">{demo.password}</span>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                className="mt-3 w-full"
-                onClick={() => {
-                  setEmail(demo.email)
-                  setPassword(demo.password)
-                }}
-              >
-                Use demo credentials
-              </Button>
-        </div>
+
           </form>
         </CardContent>
       </Card>

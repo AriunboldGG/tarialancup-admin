@@ -2,10 +2,10 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { IconInnerShadowTop, IconUsers } from "@tabler/icons-react"
+import { IconInnerShadowTop } from "@tabler/icons-react"
 
-import { NavMain } from "@/components/nav-main"
 import { NavUser } from "@/components/nav-user"
+import { useAuthUser } from "@/hooks/use-auth"
 import {
   Sidebar,
   SidebarContent,
@@ -18,7 +18,6 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { IconPlus } from "@tabler/icons-react"
-import { getSession } from "@/lib/demo-auth"
 
 const DEFAULT_USER = {
   name: "Demo Admin",
@@ -36,17 +35,17 @@ export function AppSidebar({
   onSportChange?: (sport: string) => void
   onAddTeam?: () => void
 }) {
+  const authUser = useAuthUser()
   const [user, setUser] = React.useState(DEFAULT_USER)
 
   React.useEffect(() => {
-    const session = getSession()
-    if (!session) return
-    setUser((prev) => ({
-      ...prev,
-      name: session.user.name,
-      email: session.user.email,
-    }))
-  }, [])
+    if (!authUser) return
+    setUser({
+      name: authUser.name,
+      email: authUser.email,
+      avatar: authUser.avatar || DEFAULT_USER.avatar,
+    })
+  }, [authUser])
 
   return (
     <Sidebar collapsible="offcanvas" {...props}>
@@ -66,37 +65,25 @@ export function AppSidebar({
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain
-          items={[
-            {
-              title: "Баг бүртгэлийн хүсэлтүүд",
-              url: "/dashboard",
-              icon: IconUsers,
-            },
-          ]}
-        />
         <div className="px-2 pt-4">
           <Tabs
-            value={selectedSport || "all"}
+            value={selectedSport || "Сагсан бөмбөг"}
             onValueChange={(value) => onSportChange?.(value)}
             orientation="vertical"
           >
             <TabsList variant="line" className="w-full flex-col items-start">
-              <TabsTrigger value="all" className="w-full justify-start">
-                Бүгд
-              </TabsTrigger>
               <TabsTrigger value="Сагсан бөмбөг" className="w-full justify-start">
                 Сагсан бөмбөг
-              </TabsTrigger>
-              <TabsTrigger value="Ширээний теннис" className="w-full justify-start">
-                Теннис
               </TabsTrigger>
               <TabsTrigger value="Дартс" className="w-full justify-start">
                 Дартс
               </TabsTrigger>
+              <TabsTrigger value="Ширээний теннис" className="w-full justify-start">
+                Ширээний теннис
+              </TabsTrigger>
             </TabsList>
           </Tabs>
-          {selectedSport === "all" && onAddTeam && (
+          {onAddTeam && (
             <div className="px-2 pt-3">
               <Button
                 variant="default"
