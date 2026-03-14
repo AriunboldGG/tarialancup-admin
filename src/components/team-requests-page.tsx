@@ -70,8 +70,9 @@ export type TeamRegistrationRequest = {
   transactionCode?: string
 }
 
-function parseClassInfo(className: string): { grade: number | null; section: string | null } {
+function parseClassInfo(className: string | null | undefined): { grade: number | null; section: string | null } {
   // Supports: "12 А анги", "12A", "12 A", etc.
+  if (!className) return { grade: null, section: null }
   const match = className.match(/(\d+)\s*([\p{L}])?/u)
   const grade = match?.[1] ? Number(match[1]) : null
   const section = match?.[2] ? match[2].toUpperCase() : null
@@ -80,7 +81,6 @@ function parseClassInfo(className: string): { grade: number | null; section: str
     section,
   }
 }
-
 function Field({
   label,
   value,
