@@ -1,13 +1,80 @@
 import { useState, useEffect } from 'react'
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore'
-import { db } from '@/lib/firebase'
-import type { TeamRegistrationRequest } from '@/components/team-requests-page'
+import { ref, getDownloadURL } from 'firebase/storage'
+import { db, storage } from '@/lib/firebase'
+import type { TeamRegistrationRequest, TeamMember } from '@/components/team-requests-page'
 
-// Map sport names to collection names
 const sportToCollectionMap: { [key: string]: string } = {
   'Сагсан бөмбөг': 'basketball',
   'Дартс': 'darts',
   'Ширээний теннис': 'tennis',
+}
+
+/** Resolve a raw image value: if it's a gs:// or a plain storage path, get the download URL; otherwise return as-is */
+async function resolveImageUrl(raw: string | undefined): Promise<string | undefined> {
+  if (!raw) return undefined
+  // Already a full HTTP URL
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw
+  // gs:// URI or a bare storage path
+  try {
+    const storageRef = ref(storage, raw)
+    return await getDownloadURL(storageRef)
+  } catch (err: any) {
+    console.warn('resolveImageUrl failed for path:', raw, err?.code, err?.message)
+    return undefined
+  }
+}
+
+function extractRawImageUrl(m: Record<string, any>): string | undefined {
+  return (
+    m.imageUrl ??
+    m.imageURL ??
+    m.image ??
+    m.photo ??
+    m.photoUrl ??
+    m.photoURL ??
+    m.picture ??
+    m.avatar ??
+    m.avatarUrl ??
+    undefined
+  )
+}
+
+function mapFirestoreDocSync(id: string, data: Record<string, any>, sportType: string): Omit<TeamRegistrationRequest, 'members'> & { rawMembers: any[] } {
+  const rawMembers: any[] = Array.isArray(data.members) ? data.members : []
+
+  return {
+    id,
+    teamName: data.teamName ?? data.name ?? "",
+    sportType: sportType,
+    playingYears: data.playingYears ?? data.gradRange ?? "",
+    className: data.className ?? data.classGroup ?? "",
+    graduatedYear: Number(data.graduatedYear ?? data.gradYear ?? new Date().getFullYear()),
+    gender: data.gender ?? "",
+    contactName: data.contactName ?? data.contact ?? "",
+    phone: data.phone ?? data.contactPhone ?? "",
+    status: data.status ?? "pending",
+    transactionCode: data.transactionCode ?? data.txnCode ?? undefined,
+    rawMembers,
+  }
+}
+
+async function resolveMembers(rawMembers: any[]): Promise<TeamMember[]> {
+  return Promise.all(
+    rawMembers.map(async (m, i) => {
+      const rawImg = extractRawImageUrl(m)
+      const imageUrl = await resolveImageUrl(rawImg)
+      return {
+        id: m.id ?? `m_${i}`,
+        fullName: m.fullName ?? m.firstName ?? m.name ?? "",
+        heightCm: m.heightCm ?? m.height ?? undefined,
+        sportRank: m.sportRank ?? m.rank ?? "",
+        position: m.position ?? m.job ?? m.role ?? "",
+        personalNumber: m.personalNumber ?? m.registerNo ?? m.number ?? "",
+        imageUrl,
+      }
+    })
+  )
 }
 
 export function useTeamRequests(sportType: string = 'Сагсан бөмбөг') {
@@ -16,27 +83,24 @@ export function useTeamRequests(sportType: string = 'Сагсан бөмбөг')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    // Get the collection name based on sport type
     const collectionName = sportToCollectionMap[sportType] || 'basketball'
 
-    // Create a query to get team requests ordered by creation date
     const q = query(
       collection(db, collectionName),
       orderBy('createdAt', 'desc')
     )
 
-    // Set up real-time listener
     const unsubscribe = onSnapshot(
       q,
-      (querySnapshot) => {
-        const requestsData: TeamRegistrationRequest[] = []
-        querySnapshot.forEach((doc) => {
-          requestsData.push({
-            id: doc.id,
-            ...doc.data()
-          } as TeamRegistrationRequest)
-        })
-        setRequests(requestsData)
+      async (querySnapshot) => {
+        const resolved: TeamRegistrationRequest[] = await Promise.all(
+          querySnapshot.docs.map(async (doc) => {
+            const { rawMembers, ...rest } = mapFirestoreDocSync(doc.id, doc.data() as Record<string, any>, sportType)
+            const members = await resolveMembers(rawMembers)
+            return { ...rest, members }
+          })
+        )
+        setRequests(resolved)
         setLoading(false)
       },
       (err) => {
@@ -46,7 +110,6 @@ export function useTeamRequests(sportType: string = 'Сагсан бөмбөг')
       }
     )
 
-    // Cleanup subscription on unmount
     return () => unsubscribe()
   }, [sportType])
 

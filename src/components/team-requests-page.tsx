@@ -3,7 +3,10 @@
 import * as React from "react"
 import { toast } from "sonner"
 import * as XLSX from "xlsx"
-import { IconDownload } from "@tabler/icons-react"
+import { IconDownload, IconLoader2 } from "@tabler/icons-react"
+import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage"
+import { doc, updateDoc, addDoc, collection as firestoreCollection } from "firebase/firestore"
+import { db, storage, auth } from "@/lib/firebase"
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -116,6 +119,8 @@ export function TeamRequestsPage({
   const [gradeMax, setGradeMax] = React.useState<string>("all")
   const [section, setSection] = React.useState<string>("all")
   const [className, setClassName] = React.useState<string>("all")
+  const [playingYearsFilter, setPlayingYearsFilter] = React.useState<string>("all")
+  const [gradYearFilter, setGradYearFilter] = React.useState<string>("all")
 
   const [confirmOpen, setConfirmOpen] = React.useState(false)
   const [pendingAction, setPendingAction] = React.useState<{
@@ -127,6 +132,12 @@ export function TeamRequestsPage({
   const [editOpen, setEditOpen] = React.useState(false)
   const [editingRequest, setEditingRequest] = React.useState<TeamRegistrationRequest | null>(null)
   const [editForm, setEditForm] = React.useState<Partial<TeamRegistrationRequest>>({})
+
+  const [page, setPage] = React.useState(1)
+  const PAGE_SIZE = 50
+
+  const [uploadingMemberIdx, setUploadingMemberIdx] = React.useState<number | null>(null)
+  const [saving, setSaving] = React.useState(false)
 
   const [addOpen, setAddOpen] = React.useState(false)
   const [addForm, setAddForm] = React.useState<Partial<TeamRegistrationRequest>>({
@@ -149,61 +160,55 @@ export function TeamRequestsPage({
 
   React.useEffect(() => {
     setRows(requests)
+    setPage(1)
   }, [requests])
 
   const selectedMembers = selected?.members ?? []
 
   const filterOptions = React.useMemo(() => {
-    const grades = new Set<number>()
     const sections = new Set<string>()
     const classNames = new Set<string>()
+    const playingYears = new Set<string>()
+    const gradYears = new Set<number>()
 
     for (const r of rows) {
       const info = parseClassInfo(r.className)
-      if (info.grade != null) grades.add(info.grade)
       if (info.section) sections.add(info.section)
       if (r.className) classNames.add(r.className)
+      if (r.playingYears) playingYears.add(r.playingYears)
+      if (r.graduatedYear) gradYears.add(r.graduatedYear)
     }
 
-    const sortedGrades = [...grades].sort((a, b) => a - b)
-    const sortedSections = [...sections].sort((a, b) => a.localeCompare(b))
-    const sortedClassNames = [...classNames].sort((a, b) => a.localeCompare(b))
-
     return {
-      grades: sortedGrades,
-      sections: sortedSections,
-      classNames: sortedClassNames,
+      sections: [...sections].sort((a, b) => a.localeCompare(b)),
+      classNames: [...classNames].sort((a, b) => a.localeCompare(b)),
+      playingYears: [...playingYears].sort((a, b) => a.localeCompare(b)),
+      gradYears: [...gradYears].sort((a, b) => a - b),
     }
   }, [rows])
 
   const filteredRows = React.useMemo(() => {
     const q = teamQuery.trim().toLowerCase()
-    const min = gradeMin === "all" ? null : Number(gradeMin)
-    const max = gradeMax === "all" ? null : Number(gradeMax)
     const sectionValue = section === "all" ? null : section
     const classNameValue = className === "all" ? null : className
     const sportValue = sportFilter === "all" || !sportFilter ? null : sportFilter
+    const playingYearsValue = playingYearsFilter === "all" ? null : playingYearsFilter
+    const gradYearValue = gradYearFilter === "all" ? null : Number(gradYearFilter)
 
     return rows.filter((r) => {
       if (q && !r.teamName.toLowerCase().includes(q)) return false
-
       if (sportValue && r.sportType !== sportValue) return false
-
       if (classNameValue && r.className !== classNameValue) return false
-
+      if (playingYearsValue && r.playingYears !== playingYearsValue) return false
+      if (gradYearValue && r.graduatedYear !== gradYearValue) return false
       const info = parseClassInfo(r.className)
       if (sectionValue && info.section !== sectionValue) return false
-
-      if (min != null || max != null) {
-        const g = info.grade
-        if (g == null) return false
-        if (min != null && g < min) return false
-        if (max != null && g > max) return false
-      }
-
       return true
     })
-  }, [rows, teamQuery, gradeMin, gradeMax, section, className, sportFilter])
+  }, [rows, teamQuery, section, className, sportFilter, playingYearsFilter, gradYearFilter])
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE))
+  const pagedRows = filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   function openDetails(req: TeamRegistrationRequest) {
     setSelected(req)
@@ -247,7 +252,7 @@ export function TeamRequestsPage({
     })
   }
 
-  function handleMemberImageUpload(
+  async function handleMemberImageUpload(
     index: number,
     event: React.ChangeEvent<HTMLInputElement>,
     isNew: boolean = false
@@ -265,16 +270,38 @@ export function TeamRequestsPage({
       return
     }
 
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      const imageUrl = reader.result as string
+    setUploadingMemberIdx(index)
+    try {
+      const currentUser = auth.currentUser
+      if (!currentUser) {
+        toast.error("Нэвтрэх шаардлагатай")
+        return
+      }
+
+      const folder = isNew
+        ? `members/new_${Date.now()}`
+        : `members/${editingRequest?.id ?? `new_${Date.now()}`}`
+      const fileRef = storageRef(storage, `${folder}/${Date.now()}_${index}`)
+      await uploadBytes(fileRef, file)
+      const imageUrl = await getDownloadURL(fileRef)
       if (isNew) {
         updateNewMember(index, { imageUrl })
       } else {
         updateMember(index, { imageUrl })
       }
+      toast.success("Зураг амжилттай байршлаа")
+    } catch (err: any) {
+      console.error("Storage upload error:", err?.code, err?.message, err)
+      if (err?.code === "storage/unauthorized") {
+        toast.error("Storage-ийн эрх хүрэлцэхгүй байна. Firebase Console → Storage → Rules шалгана уу.")
+      } else if (err?.code === "storage/object-not-found") {
+        toast.error("Storage bucket олдсонгүй. Firebase Console-д Storage идэвхжүүлсэн эсэхийг шалгана уу.")
+      } else {
+        toast.error(`Зураг байршуулахад алдаа: ${err?.code ?? err?.message ?? err}`)
+      }
+    } finally {
+      setUploadingMemberIdx(null)
     }
-    reader.readAsDataURL(file)
   }
 
   function addMemberToNew() {
@@ -308,48 +335,81 @@ export function TeamRequestsPage({
     })
   }
 
-  function saveNewTeam() {
-    const newTeam: TeamRegistrationRequest = {
-      id: `req_${Date.now()}`,
-      teamName: addForm.teamName || "",
-      sportType: addForm.sportType || "",
-      playingYears: addForm.playingYears || "",
-      className: addForm.className || "",
-      graduatedYear: addForm.graduatedYear || new Date().getFullYear(),
-      gender: addForm.gender || "Эрэгтэй",
-      contactName: addForm.contactName || "",
-      phone: addForm.phone || "",
-      status: "pending",
-      transactionCode: addForm.transactionCode || `TXN-2026-${String(Date.now()).slice(-4)}`,
-      members: addForm.members || [],
+  const SPORT_COLLECTION: Record<string, string> = {
+    "Сагсан бөмбөг": "basketball",
+    "Дартс": "darts",
+    "Ширээний теннис": "tennis",
+  }
+
+  async function saveNewTeam() {
+    setSaving(true)
+    try {
+      const collectionName = SPORT_COLLECTION[sportFilter ?? ""] ?? "basketball"
+      const newTeam: TeamRegistrationRequest = {
+        id: `req_${Date.now()}`,
+        teamName: addForm.teamName || "",
+        sportType: addForm.sportType || sportFilter || "",
+        playingYears: addForm.playingYears || "",
+        className: addForm.className || "",
+        graduatedYear: addForm.graduatedYear || new Date().getFullYear(),
+        gender: addForm.gender || "Эрэгтэй",
+        contactName: addForm.contactName || "",
+        phone: addForm.phone || "",
+        status: "pending",
+        transactionCode: addForm.transactionCode || `TXN-2026-${String(Date.now()).slice(-4)}`,
+        members: addForm.members || [],
+      }
+      const { id, ...firestoreData } = newTeam
+      await addDoc(firestoreCollection(db, collectionName), firestoreData)
+      setRows((prev) => [...prev, newTeam])
+      setAddOpen(false)
+      setAddForm({ members: [], status: "pending" })
+      toast.success("Шинэ баг нэмэгдлээ")
+    } catch (err: any) {
+      console.error("saveNewTeam error:", err?.code, err?.message, err)
+      toast.error(`Хадгалахад алдаа: ${err?.code ?? err?.message ?? "тодорхгүй"}`)
+    } finally {
+      setSaving(false)
     }
-
-    setRows((prev) => [...prev, newTeam])
-    setAddOpen(false)
-    setAddForm({
-      members: [],
-      status: "pending",
-    })
-    toast.success("Шинэ баг нэмэгдлээ")
   }
 
-  function saveEdit() {
+  async function saveEdit() {
     if (!editingRequest) return
-
-    setRows((prev) =>
-      prev.map((r) =>
-        r.id === editingRequest.id ? { ...r, ...editForm } : r
+    setSaving(true)
+    try {
+      const collectionName = SPORT_COLLECTION[editingRequest.sportType] ?? SPORT_COLLECTION[sportFilter ?? ""] ?? "basketball"
+      // Firestore rejects undefined values — strip them from the payload
+      const cleanedMembers = (editForm.members || []).map((m) =>
+        Object.fromEntries(Object.entries({ ...m }).filter(([, v]) => v !== undefined))
       )
-    )
-    setSelected((prev) =>
-      prev?.id === editingRequest.id ? { ...prev, ...editForm } as TeamRegistrationRequest : prev
-    )
-    setEditOpen(false)
-    setEditingRequest(null)
-    toast.success("Хүсэлтийг шинэчиллээ")
+      const payload = Object.fromEntries(
+        Object.entries({ ...editForm, members: cleanedMembers }).filter(([, v]) => v !== undefined)
+      )
+      await updateDoc(doc(db, collectionName, editingRequest.id), payload)
+      setRows((prev) =>
+        prev.map((r) =>
+          r.id === editingRequest.id ? { ...r, ...editForm } : r
+        )
+      )
+      setSelected((prev) =>
+        prev?.id === editingRequest.id ? { ...prev, ...editForm } as TeamRegistrationRequest : prev
+      )
+      setEditOpen(false)
+      setEditingRequest(null)
+      toast.success("Хүсэлтийг шинэчиллээ")
+    } catch (err: any) {
+      console.error("saveEdit error:", err?.code, err?.message, err)
+      toast.error(`Хадгалахад алдаа: ${err?.code ?? err?.message ?? "тодорхгүй"}`)
+    } finally {
+      setSaving(false)
+    }
   }
 
-  function setStatus(id: string, status: TeamRegistrationRequest["status"]) {
+  async function setStatus(id: string, status: TeamRegistrationRequest["status"]) {
+    const req = rows.find((r) => r.id === id)
+    if (!req) return
+    const collectionName = SPORT_COLLECTION[req.sportType] ?? SPORT_COLLECTION[sportFilter ?? ""] ?? "basketball"
+    await updateDoc(doc(db, collectionName, id), { status })
     setRows((prev) =>
       prev.map((r) => (r.id === id ? { ...r, status } : r))
     )
@@ -372,17 +432,20 @@ export function TeamRequestsPage({
     }
   }
 
-  function confirmAction() {
+  async function confirmAction() {
     if (!pendingAction) return
-
-    if (pendingAction.action === "approve") {
-      setStatus(pendingAction.id, "approved")
-      toast.success("Хүсэлтийг зөвшөөрлөө")
-    } else {
-      setStatus(pendingAction.id, "rejected")
-      toast.message("Хүсэлтийг татгалзлаа")
+    try {
+      if (pendingAction.action === "approve") {
+        await setStatus(pendingAction.id, "approved")
+        toast.success("Хүсэлтийг зөвшөөрлөө")
+      } else {
+        await setStatus(pendingAction.id, "rejected")
+        toast.message("Хүсэлтийг татгалзлаа")
+      }
+    } catch (err: any) {
+      console.error("setStatus error:", err?.code, err?.message, err)
+      toast.error(`Төлөв өөрчлөхд алдаа: ${err?.code ?? err?.message ?? "тодорхгүй"}`)
     }
-
     setConfirmOpen(false)
     setPendingAction(null)
   }
@@ -513,7 +576,7 @@ export function TeamRequestsPage({
                 <div className="text-muted-foreground text-xs">Багийн нэр</div>
                 <Input
                   value={teamQuery}
-                  onChange={(e) => setTeamQuery(e.target.value)}
+                  onChange={(e) => { setTeamQuery(e.target.value); setPage(1) }}
                   placeholder="Ж: Шонхорууд"
                   className="w-full"
                 />
@@ -521,26 +584,37 @@ export function TeamRequestsPage({
 
               <div className="grid gap-1">
                 <div className="text-muted-foreground text-xs">Тоглох он</div>
-                <div className="grid grid-cols-2 gap-2">
-                  <Select value={gradeMin} onValueChange={setGradeMin}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Min" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Бүгд</SelectItem>
-                      {filterOptions.grades.map((g) => (
-                        <SelectItem key={`min-${g}`} value={String(g)}>
-                          {g}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <Select value={playingYearsFilter} onValueChange={(v) => { setPlayingYearsFilter(v); setPage(1) }}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Бүгд" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Бүгд</SelectItem>
+                    {filterOptions.playingYears.map((y) => (
+                      <SelectItem key={y} value={y}>{y}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
-              <div className="grid gap-1 sm:col-span-2 lg:col-span-1">
+              <div className="grid gap-1">
+                <div className="text-muted-foreground text-xs">Төгссөн он</div>
+                <Select value={gradYearFilter} onValueChange={(v) => { setGradYearFilter(v); setPage(1) }}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Бүгд" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Бүгд</SelectItem>
+                    {filterOptions.gradYears.map((y) => (
+                      <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-1">
                 <div className="text-muted-foreground text-xs">Анги бүлэг</div>
-                <Select value={className} onValueChange={setClassName}>
+                <Select value={className} onValueChange={(v) => { setClassName(v); setPage(1) }}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Бүгд" />
                   </SelectTrigger>
@@ -567,6 +641,9 @@ export function TeamRequestsPage({
                   setGradeMax("all")
                   setSection("all")
                   setClassName("all")
+                  setPlayingYearsFilter("all")
+                  setGradYearFilter("all")
+                  setPage(1)
                 }}
               >
                 Clear filters
@@ -578,10 +655,12 @@ export function TeamRequestsPage({
                 <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-[40px] text-center">№</TableHead>
                   <TableHead className="min-w-[120px]">Баг</TableHead>
                   <TableHead className="hidden sm:table-cell min-w-[100px]">Спорт</TableHead>
-                  <TableHead className="hidden md:table-cell min-w-[100px]">Он</TableHead>
+                  <TableHead className="hidden md:table-cell min-w-[100px]">Тоглох он</TableHead>
                   <TableHead className="hidden lg:table-cell min-w-[100px]">Анги</TableHead>
+                  <TableHead className="hidden lg:table-cell min-w-[90px]">Төгссөн он</TableHead>
                   <TableHead className="hidden lg:table-cell min-w-[60px]">Гишүүд</TableHead>
                   <TableHead className="hidden xl:table-cell min-w-[120px]">Холбоо барих</TableHead>
                   <TableHead className="hidden xl:table-cell min-w-[100px]">Утас</TableHead>
@@ -590,15 +669,16 @@ export function TeamRequestsPage({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredRows.length === 0 ? (
+                {pagedRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-muted-foreground py-8 text-center text-sm sm:text-base">
+                    <TableCell colSpan={11} className="text-muted-foreground py-8 text-center text-sm sm:text-base">
                       Илэрц олдсонгүй.
                     </TableCell>
                   </TableRow>
                 ) : null}
-                {filteredRows.map((req) => (
+                {pagedRows.map((req, idx) => (
                   <TableRow key={req.id}>
+                    <TableCell className="text-center text-muted-foreground text-xs">{(page - 1) * PAGE_SIZE + idx + 1}</TableCell>
                     <TableCell className="font-medium">
                       <button
                         type="button"
@@ -614,6 +694,7 @@ export function TeamRequestsPage({
                     <TableCell className="hidden sm:table-cell">{req.sportType}</TableCell>
                     <TableCell className="hidden md:table-cell">{req.playingYears}</TableCell>
                     <TableCell className="hidden lg:table-cell">{req.className}</TableCell>
+                    <TableCell className="hidden lg:table-cell">{req.graduatedYear}</TableCell>
                     <TableCell className="hidden lg:table-cell">{req.members.length}</TableCell>
                     <TableCell className="hidden xl:table-cell">{req.contactName}</TableCell>
                     <TableCell className="hidden xl:table-cell">{req.phone}</TableCell>
@@ -677,6 +758,49 @@ export function TeamRequestsPage({
             </Table>
               </div>
             </div>
+
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between pt-4">
+                <div className="text-xs text-muted-foreground">
+                  {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filteredRows.length)} / {filteredRows.length}
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(1)}
+                    disabled={page === 1}
+                  >
+                    «
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                  >
+                    ‹
+                  </Button>
+                  <span className="px-2 text-sm">{page} / {totalPages}</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page === totalPages}
+                  >
+                    ›
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(totalPages)}
+                    disabled={page === totalPages}
+                  >
+                    »
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -985,13 +1109,21 @@ export function TeamRequestsPage({
                                 </div>
                               )}
                               <div className="flex-1 w-full sm:w-auto">
-                                <Input
-                                  id={`member-${index}-image`}
-                                  type="file"
-                                  accept="image/*"
-                                  onChange={(e) => handleMemberImageUpload(index, e, false)}
-                                  className="cursor-pointer text-xs sm:text-sm"
-                                />
+                                {uploadingMemberIdx === index ? (
+                                  <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                                    <IconLoader2 className="size-4 animate-spin" />
+                                    Зураг байршуулж байна...
+                                  </div>
+                                ) : (
+                                  <Input
+                                    id={`member-${index}-image`}
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={(e) => handleMemberImageUpload(index, e, false)}
+                                    className="cursor-pointer text-xs sm:text-sm"
+                                    disabled={uploadingMemberIdx !== null}
+                                  />
+                                )}
                               </div>
                             </div>
                           </div>
@@ -1069,7 +1201,8 @@ export function TeamRequestsPage({
                 >
                   Цуцлах
                 </Button>
-                <Button className="flex-1 text-sm sm:text-base" onClick={saveEdit}>
+                <Button className="flex-1 text-sm sm:text-base" onClick={saveEdit} disabled={saving || uploadingMemberIdx !== null}>
+                  {saving ? <IconLoader2 className="size-4 animate-spin mr-1" /> : null}
                   Хадгалах
                 </Button>
               </div>
@@ -1283,15 +1416,23 @@ export function TeamRequestsPage({
                                 Зураггүй
                               </div>
                             )}
-                            <div className="flex-1 w-full sm:w-auto">
-                              <Input
-                                id={`add-member-${index}-image`}
-                                type="file"
-                                accept="image/*"
-                                onChange={(e) => handleMemberImageUpload(index, e, true)}
-                                className="cursor-pointer text-xs sm:text-sm"
-                              />
-                            </div>
+                              <div className="flex-1 w-full sm:w-auto">
+                                {uploadingMemberIdx === index ? (
+                                  <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                                    <IconLoader2 className="size-4 animate-spin" />
+                                    Зураг байршуулж байна...
+                                  </div>
+                                ) : (
+                                  <Input
+                                    id={`add-member-${index}-image`}
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={(e) => handleMemberImageUpload(index, e, true)}
+                                    className="cursor-pointer text-xs sm:text-sm"
+                                    disabled={uploadingMemberIdx !== null}
+                                  />
+                                )}
+                              </div>
                           </div>
                         </div>
 
@@ -1370,9 +1511,10 @@ export function TeamRequestsPage({
               >
                 Цуцлах
               </Button>
-              <Button className="flex-1 text-sm sm:text-base" onClick={saveNewTeam}>
-                Хадгалах
-              </Button>
+              <Button className="flex-1 text-sm sm:text-base" onClick={saveNewTeam} disabled={saving || uploadingMemberIdx !== null}>
+                  {saving ? <IconLoader2 className="size-4 animate-spin mr-1" /> : null}
+                  Хадгалах
+                </Button>
             </div>
           </div>
         </SheetContent>
