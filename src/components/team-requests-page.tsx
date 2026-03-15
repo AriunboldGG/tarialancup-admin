@@ -5,7 +5,7 @@ import { toast } from "sonner"
 import * as XLSX from "xlsx"
 import { IconDownload, IconLoader2 } from "@tabler/icons-react"
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage"
-import { doc, updateDoc, addDoc, collection as firestoreCollection } from "firebase/firestore"
+import { doc, updateDoc, addDoc, collection as firestoreCollection, serverTimestamp } from "firebase/firestore"
 import { db, storage, auth } from "@/lib/firebase"
 
 import { Button } from "@/components/ui/button"
@@ -55,6 +55,7 @@ export type TeamMember = {
   sportRank?: string
   position?: string
   personalNumber?: string
+  profession?: string
   imageUrl?: string
 }
 
@@ -125,7 +126,7 @@ export function TeamRequestsPage({
   const [confirmOpen, setConfirmOpen] = React.useState(false)
   const [pendingAction, setPendingAction] = React.useState<{
     id: string
-    action: "approve" | "reject"
+    action: "approve" | "reject" | "delete"
     teamName: string
   } | null>(null)
 
@@ -147,16 +148,16 @@ export function TeamRequestsPage({
 
   React.useEffect(() => {
     if (onAddTeam) {
-      // Expose the openAddForm function to parent
       ;(window as any).__openAddTeamForm = () => {
         setAddForm({
           members: [],
           status: "pending",
+          sportType: sportFilter || "Сагсан бөмбөг",
         })
         setAddOpen(true)
       }
     }
-  }, [onAddTeam])
+  }, [onAddTeam, sportFilter])
 
   React.useEffect(() => {
     setRows(requests)
@@ -239,6 +240,7 @@ export function TeamRequestsPage({
         sportRank: "",
         position: "",
         personalNumber: "",
+        profession: "",
       })
       return { ...prev, members }
     })
@@ -314,6 +316,7 @@ export function TeamRequestsPage({
         sportRank: "",
         position: "",
         personalNumber: "",
+        profession: "",
       })
       return { ...prev, members }
     })
@@ -338,13 +341,13 @@ export function TeamRequestsPage({
   const SPORT_COLLECTION: Record<string, string> = {
     "Сагсан бөмбөг": "basketball",
     "Дартс": "darts",
-    "Ширээний теннис": "tennis",
+    "Теннис": "tennis",
   }
 
   async function saveNewTeam() {
     setSaving(true)
     try {
-      const collectionName = SPORT_COLLECTION[sportFilter ?? ""] ?? "basketball"
+      const collectionName = SPORT_COLLECTION[addForm.sportType ?? ""] ?? SPORT_COLLECTION[sportFilter ?? ""] ?? "basketball"
       const newTeam: TeamRegistrationRequest = {
         id: `req_${Date.now()}`,
         teamName: addForm.teamName || "",
@@ -360,7 +363,95 @@ export function TeamRequestsPage({
         members: addForm.members || [],
       }
       const { id, ...firestoreData } = newTeam
-      await addDoc(firestoreCollection(db, collectionName), firestoreData)
+
+      // Write in the same field format each sport's mobile app uses
+      const isTennis = collectionName === "tennis"
+      const isDarts = collectionName === "darts"
+
+      const standardMember = (m: TeamMember): Record<string, any> => {
+        const raw: Record<string, any> = {
+          fullName: m.fullName || "",
+          sportRank: m.sportRank || "",
+          position: m.position || "",
+          personalNumber: m.personalNumber || "",
+          profession: m.profession || "",
+        }
+        if (m.imageUrl) raw.imageUrl = m.imageUrl
+        return Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== undefined && v !== ""))
+      }
+
+      const mappedMembers = (firestoreData.members || []).map((m) => {
+        if (isTennis) {
+          const parts = m.fullName.trim().split(/\s+/)
+          const raw: Record<string, any> = {
+            firstName: parts[0] || "",
+            lastName: parts.slice(1).join(" ") || "",
+            job: m.profession || "",
+            registerNo: m.personalNumber || "",
+            sportRank: m.sportRank || "",
+            position: m.position || "",
+          }
+          if (m.imageUrl) raw.photoUrl = m.imageUrl
+          return raw
+        }
+        return standardMember(m)
+      })
+
+      let basePayload: Record<string, any>
+
+      if (isDarts) {
+        // Дартс: standard field names only
+        basePayload = {
+          className: firestoreData.className,
+          contactName: firestoreData.contactName,
+          phone: firestoreData.phone,
+          playingYears: firestoreData.playingYears,
+          graduatedYear: firestoreData.graduatedYear,
+          gender: firestoreData.gender,
+          sportType: firestoreData.sportType,
+          status: firestoreData.status,
+          transactionCode: firestoreData.transactionCode,
+          teamName: firestoreData.teamName,
+          members: mappedMembers,
+        }
+      } else if (isTennis) {
+        // Теннис: mobile field names
+        basePayload = {
+          classGroup: firestoreData.className,
+          contactPhone: firestoreData.phone,
+          gradRange: firestoreData.playingYears,
+          gradYear: String(firestoreData.graduatedYear),
+          gender: firestoreData.gender,
+          sportType: firestoreData.sportType,
+          status: firestoreData.status,
+          transactionCode: firestoreData.transactionCode,
+          members: mappedMembers,
+        }
+      } else {
+        // Сагсан бөмбөг: both mobile and standard field names
+        basePayload = {
+          classGroup: firestoreData.className,
+          className: firestoreData.className,
+          contactPhone: firestoreData.phone,
+          phone: firestoreData.phone,
+          gradRange: firestoreData.playingYears,
+          playingYears: firestoreData.playingYears,
+          gradYear: String(firestoreData.graduatedYear),
+          graduatedYear: firestoreData.graduatedYear,
+          gender: firestoreData.gender,
+          sportType: firestoreData.sportType,
+          status: firestoreData.status,
+          transactionCode: firestoreData.transactionCode,
+          teamName: firestoreData.teamName,
+          contactName: firestoreData.contactName,
+          members: mappedMembers,
+        }
+      }
+
+      const cleanedPayload = Object.fromEntries(
+        Object.entries(basePayload).filter(([, v]) => v !== undefined && v !== "" && v !== 0)
+      )
+      await addDoc(firestoreCollection(db, collectionName), { ...cleanedPayload, createdAt: serverTimestamp() })
       setRows((prev) => [...prev, newTeam])
       setAddOpen(false)
       setAddForm({ members: [], status: "pending" })
@@ -432,15 +523,26 @@ export function TeamRequestsPage({
     }
   }
 
+  function handleDeleteClick(id: string) {
+    const req = rows.find((r) => r.id === id)
+    if (req) {
+      setPendingAction({ id, action: "delete", teamName: req.teamName })
+      setConfirmOpen(true)
+    }
+  }
+
   async function confirmAction() {
     if (!pendingAction) return
     try {
       if (pendingAction.action === "approve") {
         await setStatus(pendingAction.id, "approved")
         toast.success("Хүсэлтийг зөвшөөрлөө")
-      } else {
+      } else if (pendingAction.action === "reject") {
         await setStatus(pendingAction.id, "rejected")
         toast.message("Хүсэлтийг татгалзлаа")
+      } else {
+        remove(pendingAction.id)
+        return
       }
     } catch (err: any) {
       console.error("setStatus error:", err?.code, err?.message, err)
@@ -458,6 +560,12 @@ export function TeamRequestsPage({
     }
     toast.error("Хүсэлтийг устгалаа")
   }
+
+  const addSportType = addForm.sportType || sportFilter || "Сагсан бөмбөг"
+  const addShowGender = addSportType === "Сагсан бөмбөг" || addSportType === "Теннис"
+  const addShowTeamName = addSportType === "Сагсан бөмбөг" || addSportType === "Дартс"
+  const addShowPosition = addSportType === "Сагсан бөмбөг"
+  const addShowPersonalNumber = addSportType === "Сагсан бөмбөг"
 
   function StatusBadge({ status }: { status: TeamRegistrationRequest["status"] }) {
     if (status === "approved") return <Badge>Зөвшөөрсөн</Badge>
@@ -685,7 +793,7 @@ export function TeamRequestsPage({
                         className="cursor-pointer hover:underline underline-offset-4 text-sm sm:text-base"
                         onClick={() => openDetails(req)}
                       >
-                        {req.teamName}
+                        {req.teamName || (req.members[0]?.fullName ?? "—")}
                       </button>
                       <div className="mt-1 text-xs text-muted-foreground sm:hidden">
                         {req.sportType} • {req.playingYears}
@@ -745,7 +853,7 @@ export function TeamRequestsPage({
                           size="sm"
                           variant="destructive"
                           className="cursor-pointer text-xs sm:text-sm"
-                          onClick={() => remove(req.id)}
+                          onClick={() => handleDeleteClick(req.id)}
                         >
                           <span className="hidden sm:inline">Delete</span>
                           <span className="sm:hidden">X</span>
@@ -872,6 +980,9 @@ export function TeamRequestsPage({
                               label="Хувийн дугаар"
                               value={m.personalNumber}
                             />
+                          ) : null}
+                          {m.profession ? (
+                            <Field label="Ажил мэргэжил" value={m.profession} />
                           ) : null}
                         </CardContent>
                       </Card>
@@ -1231,115 +1342,178 @@ export function TeamRequestsPage({
 
           <div className="grid gap-3 sm:gap-4 px-2 sm:px-4 pb-4 sm:pb-6 overflow-y-auto max-h-[calc(100vh-120px)]">
             <div className="grid gap-4">
+              {/* Спортын төрөл */}
               <div className="grid gap-2">
-                <Label htmlFor="add-teamName" className="text-xs sm:text-sm">Багийн нэр</Label>
-                <Input
-                  id="add-teamName"
-                  value={addForm.teamName || ""}
-                  onChange={(e) =>
-                    setAddForm((prev) => ({ ...prev, teamName: e.target.value }))
-                  }
-                  className="text-sm sm:text-base"
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="add-sportType" className="text-xs sm:text-sm">Спортын төрөл</Label>
-                <Input
-                  id="add-sportType"
-                  value={addForm.sportType || ""}
-                  onChange={(e) =>
-                    setAddForm((prev) => ({ ...prev, sportType: e.target.value }))
-                  }
-                  className="text-sm sm:text-base"
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="add-playingYears" className="text-xs sm:text-sm">Багийн тоглох үе</Label>
-                <Input
-                  id="add-playingYears"
-                  value={addForm.playingYears || ""}
-                  onChange={(e) =>
-                    setAddForm((prev) => ({ ...prev, playingYears: e.target.value }))
-                  }
-                  placeholder="Ж: 2016-2025"
-                  className="text-sm sm:text-base"
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="add-className" className="text-xs sm:text-sm">Анги</Label>
-                <Input
-                  id="add-className"
-                  value={addForm.className || ""}
-                  onChange={(e) =>
-                    setAddForm((prev) => ({ ...prev, className: e.target.value }))
-                  }
-                  placeholder="Ж: 12 А анги"
-                  className="text-sm sm:text-base"
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="add-graduatedYear" className="text-xs sm:text-sm">Төгссөн жил</Label>
-                <Input
-                  id="add-graduatedYear"
-                  type="number"
-                  value={addForm.graduatedYear || ""}
-                  onChange={(e) =>
-                    setAddForm((prev) => ({
-                      ...prev,
-                      graduatedYear: Number(e.target.value),
-                    }))
-                  }
-                  className="text-sm sm:text-base"
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="add-gender" className="text-xs sm:text-sm">Хүйс</Label>
+                <Label className="text-xs sm:text-sm">Спортын төрөл <span className="text-destructive">*</span></Label>
                 <Select
-                  value={addForm.gender || ""}
+                  value={addForm.sportType || ""}
                   onValueChange={(value) =>
-                    setAddForm((prev) => ({ ...prev, gender: value }))
+                    setAddForm((prev) => ({ ...prev, sportType: value }))
                   }
                 >
                   <SelectTrigger className="text-sm sm:text-base">
-                    <SelectValue placeholder="Хүйс сонгох" />
+                    <SelectValue placeholder="Спорт сонгох" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Эрэгтэй">Эрэгтэй</SelectItem>
-                    <SelectItem value="Эмэгтэй">Эмэгтэй</SelectItem>
-                    <SelectItem value="Холимог">Холимог</SelectItem>
+                    <SelectItem value="Сагсан бөмбөг">Сагсан бөмбөг</SelectItem>
+                    <SelectItem value="Дартс">Дартс</SelectItem>
+                    <SelectItem value="Теннис">Теннис</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
+              {/* Багийн тоглох он */}
               <div className="grid gap-2">
-                <Label htmlFor="add-contactName" className="text-xs sm:text-sm">Холбоо барих хүн</Label>
-                <Input
-                  id="add-contactName"
-                  value={addForm.contactName || ""}
-                  onChange={(e) =>
-                    setAddForm((prev) => ({ ...prev, contactName: e.target.value }))
+                <Label className="text-xs sm:text-sm">Багийн тоглох он <span className="text-destructive">*</span></Label>
+                <Select
+                  value={addForm.playingYears || ""}
+                  onValueChange={(value) =>
+                    setAddForm((prev) => ({ ...prev, playingYears: value }))
                   }
-                  className="text-sm sm:text-base"
-                />
+                >
+                  <SelectTrigger className="text-sm sm:text-base">
+                    <SelectValue placeholder="Сонгох" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="2003-аас өмнө">2003-аас өмнө</SelectItem>
+                    <SelectItem value="2004-2014">2004-2014</SelectItem>
+                    <SelectItem value="2015-2025">2015-2025</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
-              <div className="grid gap-2">
-                <Label htmlFor="add-phone" className="text-xs sm:text-sm">Утас</Label>
-                <Input
-                  id="add-phone"
-                  value={addForm.phone || ""}
-                  onChange={(e) =>
-                    setAddForm((prev) => ({ ...prev, phone: e.target.value }))
-                  }
-                  className="text-sm sm:text-base"
-                />
+              {/* Анги + Төгссөн жил side-by-side */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-2">
+                  <Label htmlFor="add-className" className="text-xs sm:text-sm">Анги <span className="text-destructive">*</span></Label>
+                  <Input
+                    id="add-className"
+                    value={addForm.className || ""}
+                    onChange={(e) =>
+                      setAddForm((prev) => ({ ...prev, className: e.target.value }))
+                    }
+                    placeholder="Ж: 12 А анги"
+                    className="text-sm sm:text-base"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="add-graduatedYear" className="text-xs sm:text-sm">Төгссөн жил <span className="text-destructive">*</span></Label>
+                  <Input
+                    id="add-graduatedYear"
+                    type="number"
+                    value={addForm.graduatedYear || ""}
+                    onChange={(e) =>
+                      setAddForm((prev) => ({
+                        ...prev,
+                        graduatedYear: Number(e.target.value),
+                      }))
+                    }
+                    className="text-sm sm:text-base"
+                  />
+                </div>
               </div>
 
+              {/* Сагсан бөмбөг: [Хүйс, Багийн нэр] side-by-side */}
+              {addShowGender && addShowTeamName ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-2">
+                    <Label className="text-xs sm:text-sm">Хүйс <span className="text-destructive">*</span></Label>
+                    <Select
+                      value={addForm.gender || ""}
+                      onValueChange={(value) =>
+                        setAddForm((prev) => ({ ...prev, gender: value }))
+                      }
+                    >
+                      <SelectTrigger className="text-sm sm:text-base">
+                        <SelectValue placeholder="Сонгох" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Эрэгтэй">Эрэгтэй</SelectItem>
+                        <SelectItem value="Эмэгтэй">Эмэгтэй</SelectItem>
+                        <SelectItem value="Холимог">Холимог</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="add-teamName" className="text-xs sm:text-sm">Багийн нэр <span className="text-destructive">*</span></Label>
+                    <Input
+                      id="add-teamName"
+                      value={addForm.teamName || ""}
+                      onChange={(e) =>
+                        setAddForm((prev) => ({ ...prev, teamName: e.target.value }))
+                      }
+                      placeholder="Багийн нэр (заавал)"
+                      className="text-sm sm:text-base"
+                    />
+                  </div>
+                </div>
+              ) : addShowGender ? (
+                /* Теннис: зөвхөн Хүйс */
+                <div className="grid gap-2">
+                  <Label className="text-xs sm:text-sm">Хүйс <span className="text-destructive">*</span></Label>
+                  <Select
+                    value={addForm.gender || ""}
+                    onValueChange={(value) =>
+                      setAddForm((prev) => ({ ...prev, gender: value }))
+                    }
+                  >
+                    <SelectTrigger className="text-sm sm:text-base">
+                      <SelectValue placeholder="Сонгох" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Эрэгтэй">Эрэгтэй</SelectItem>
+                      <SelectItem value="Эмэгтэй">Эмэгтэй</SelectItem>
+                      <SelectItem value="Холимог">Холимог</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : addShowTeamName ? (
+                /* Дартс: [Багийн нэр, Холбоо барих утас] side-by-side */
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-2">
+                    <Label htmlFor="add-teamName-darts" className="text-xs sm:text-sm">Багийн нэр <span className="text-destructive">*</span></Label>
+                    <Input
+                      id="add-teamName-darts"
+                      value={addForm.teamName || ""}
+                      onChange={(e) =>
+                        setAddForm((prev) => ({ ...prev, teamName: e.target.value }))
+                      }
+                      placeholder="Багийн нэр (заавал)"
+                      className="text-sm sm:text-base"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="add-phone-darts" className="text-xs sm:text-sm">Холбоо барих утас <span className="text-destructive">*</span></Label>
+                    <Input
+                      id="add-phone-darts"
+                      value={addForm.phone || ""}
+                      onChange={(e) =>
+                        setAddForm((prev) => ({ ...prev, phone: e.target.value }))
+                      }
+                      placeholder="Утасны дугаар"
+                      className="text-sm sm:text-base"
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Холбоо барих утас — standalone (Сагсан бөмбөг, Теннис); Дартс has it inline above */}
+              {(!addShowTeamName || addShowGender) && (
+                <div className="grid gap-2">
+                  <Label htmlFor="add-phone" className="text-xs sm:text-sm">Холбоо барих утас <span className="text-destructive">*</span></Label>
+                  <Input
+                    id="add-phone"
+                    value={addForm.phone || ""}
+                    onChange={(e) =>
+                      setAddForm((prev) => ({ ...prev, phone: e.target.value }))
+                    }
+                    placeholder="Утасны дугаар"
+                    className="text-sm sm:text-base"
+                  />
+                </div>
+              )}
+
+              {/* Гүйлгээний код */}
               <div className="grid gap-2">
                 <Label htmlFor="add-transactionCode" className="text-xs sm:text-sm">Гүйлгээний код</Label>
                 <Input
@@ -1389,7 +1563,7 @@ export function TeamRequestsPage({
                       </CardHeader>
                       <CardContent className="grid gap-3">
                         <div className="grid gap-2">
-                          <Label htmlFor={`add-member-${index}-name`} className="text-xs sm:text-sm">Овог нэр</Label>
+                          <Label htmlFor={`add-member-${index}-name`} className="text-xs sm:text-sm">Тамирчны овог нэр</Label>
                           <Input
                             id={`add-member-${index}-name`}
                             value={member.fullName || ""}
@@ -1402,7 +1576,63 @@ export function TeamRequestsPage({
                         </div>
 
                         <div className="grid gap-2">
-                          <Label htmlFor={`add-member-${index}-image`} className="text-xs sm:text-sm">Гишүүний зураг</Label>
+                          <Label htmlFor={`add-member-${index}-sportRank`} className="text-xs sm:text-sm">Спортын зэрэг</Label>
+                          <Input
+                            id={`add-member-${index}-sportRank`}
+                            value={member.sportRank || ""}
+                            onChange={(e) =>
+                              updateNewMember(index, { sportRank: e.target.value })
+                            }
+                            placeholder="Ж: Дэд мастер"
+                            className="text-sm sm:text-base"
+                          />
+                        </div>
+
+                        <div className="grid gap-2">
+                          <Label htmlFor={`add-member-${index}-profession`} className="text-xs sm:text-sm">Ажил мэргэжил</Label>
+                          <Input
+                            id={`add-member-${index}-profession`}
+                            value={member.profession || ""}
+                            onChange={(e) =>
+                              updateNewMember(index, { profession: e.target.value })
+                            }
+                            placeholder="Ж: Багш"
+                            className="text-sm sm:text-base"
+                          />
+                        </div>
+
+                        {addShowPosition && (
+                          <div className="grid gap-2">
+                            <Label htmlFor={`add-member-${index}-position`} className="text-xs sm:text-sm">Тоглох байрлал</Label>
+                            <Input
+                              id={`add-member-${index}-position`}
+                              value={member.position || ""}
+                              onChange={(e) =>
+                                updateNewMember(index, { position: e.target.value })
+                              }
+                              placeholder="Ж: Довтлогч"
+                              className="text-sm sm:text-base"
+                            />
+                          </div>
+                        )}
+
+                        {addShowPersonalNumber && (
+                          <div className="grid gap-2">
+                            <Label htmlFor={`add-member-${index}-personalNumber`} className="text-xs sm:text-sm">Хувийн дугаар</Label>
+                            <Input
+                              id={`add-member-${index}-personalNumber`}
+                              value={member.personalNumber || ""}
+                              onChange={(e) =>
+                                updateNewMember(index, { personalNumber: e.target.value })
+                              }
+                              placeholder="Ж: 889900"
+                              className="text-sm sm:text-base"
+                            />
+                          </div>
+                        )}
+
+                        <div className="grid gap-2">
+                          <Label htmlFor={`add-member-${index}-image`} className="text-xs sm:text-sm">Зураг</Label>
                           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
                             {member.imageUrl ? (
                               <Avatar className="size-12 sm:size-16 shrink-0">
@@ -1434,61 +1664,6 @@ export function TeamRequestsPage({
                                 )}
                               </div>
                           </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div className="grid gap-2">
-                            <Label htmlFor={`add-member-${index}-height`} className="text-xs sm:text-sm">Өндөр (см)</Label>
-                            <Input
-                              id={`add-member-${index}-height`}
-                              type="number"
-                              value={member.heightCm || ""}
-                              onChange={(e) =>
-                                updateNewMember(index, {
-                                  heightCm: e.target.value ? Number(e.target.value) : undefined,
-                                })
-                              }
-                              placeholder="Ж: 170"
-                            />
-                          </div>
-
-                          <div className="grid gap-2">
-                            <Label htmlFor={`add-member-${index}-personalNumber`} className="text-xs sm:text-sm">
-                              Хувийн дугаар
-                            </Label>
-                            <Input
-                              id={`add-member-${index}-personalNumber`}
-                              value={member.personalNumber || ""}
-                              onChange={(e) =>
-                                updateNewMember(index, { personalNumber: e.target.value })
-                              }
-                              placeholder="Ж: 889900"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="grid gap-2">
-                          <Label htmlFor={`add-member-${index}-position`} className="text-xs sm:text-sm">Байрлал</Label>
-                          <Input
-                            id={`add-member-${index}-position`}
-                            value={member.position || ""}
-                            onChange={(e) =>
-                              updateNewMember(index, { position: e.target.value })
-                            }
-                            placeholder="Ж: Довтлогч"
-                          />
-                        </div>
-
-                        <div className="grid gap-2">
-                          <Label htmlFor={`add-member-${index}-sportRank`}>Спортын зэрэг</Label>
-                          <Input
-                            id={`add-member-${index}-sportRank`}
-                            value={member.sportRank || ""}
-                            onChange={(e) =>
-                              updateNewMember(index, { sportRank: e.target.value })
-                            }
-                            placeholder="Ж: Дэд мастер"
-                          />
                         </div>
                       </CardContent>
                     </Card>
@@ -1526,7 +1701,9 @@ export function TeamRequestsPage({
             <AlertDialogTitle>
               {pendingAction?.action === "approve"
                 ? "Хүсэлтийг зөвшөөрөх үү?"
-                : "Хүсэлтийг татгалзах уу?"}
+                : pendingAction?.action === "delete"
+                  ? "Хүсэлтийг устгах уу?"
+                  : "Хүсэлтийг татгалзах уу?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {pendingAction && (
@@ -1534,8 +1711,10 @@ export function TeamRequestsPage({
                   Та <strong>{pendingAction.teamName}</strong> багийн хүсэлтийг{" "}
                   {pendingAction.action === "approve"
                     ? "зөвшөөрөх"
-                    : "татгалзах"}{" "}
-                  гэж байна.
+                    : pendingAction.action === "delete"
+                      ? "устгах"
+                      : "татгалзах"}{" "}
+                  гэж байна.{pendingAction.action === "delete" ? " Энэ үйлдлийг буцаах боломжгүй." : ""}
                 </>
               )}
             </AlertDialogDescription>
@@ -1544,9 +1723,9 @@ export function TeamRequestsPage({
             <AlertDialogCancel>Буцах</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmAction}
-              variant={pendingAction?.action === "reject" ? "destructive" : "default"}
+              variant={pendingAction?.action === "reject" || pendingAction?.action === "delete" ? "destructive" : "default"}
             >
-              {pendingAction?.action === "approve" ? "Зөвшөөрөх" : "Татгалзах"}
+              {pendingAction?.action === "approve" ? "Зөвшөөрөх" : pendingAction?.action === "delete" ? "Устгах" : "Татгалзах"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -25,8 +25,8 @@ export function SiteHeader({
         return "Сагсан бөмбөг"
       case "Дартс":
         return "Дартс"
-      case "Ширээний теннис":
-        return "Ширээний теннис"
+      case "Теннис":
+        return "Теннис"
       default:
         return "Баг бүртгэлийн хүсэлтүүд"
     }

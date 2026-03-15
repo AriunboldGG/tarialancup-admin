@@ -78,8 +78,8 @@ export function AppSidebar({
               <TabsTrigger value="Дартс" className="w-full justify-start">
                 Дартс
               </TabsTrigger>
-              <TabsTrigger value="Ширээний теннис" className="w-full justify-start">
-                Ширээний теннис
+              <TabsTrigger value="Теннис" className="w-full justify-start">
+                Теннис
               </TabsTrigger>
             </TabsList>
           </Tabs>

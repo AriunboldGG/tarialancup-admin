@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore'
+import { collection, query, onSnapshot } from 'firebase/firestore'
 import { ref, getDownloadURL } from 'firebase/storage'
 import { db, storage } from '@/lib/firebase'
 import type { TeamRegistrationRequest, TeamMember } from '@/components/team-requests-page'
@@ -7,7 +7,7 @@ import type { TeamRegistrationRequest, TeamMember } from '@/components/team-requ
 const sportToCollectionMap: { [key: string]: string } = {
   'Сагсан бөмбөг': 'basketball',
   'Дартс': 'darts',
-  'Ширээний теннис': 'tennis',
+  'Теннис': 'tennis',
 }
 
 /** Resolve a raw image value: if it's a gs:// or a plain storage path, get the download URL; otherwise return as-is */
@@ -45,7 +45,7 @@ function mapFirestoreDocSync(id: string, data: Record<string, any>, sportType: s
 
   return {
     id,
-    teamName: data.teamName ?? data.name ?? "",
+    teamName: data.teamName ?? data.name ?? data.fullName ?? data.playerName ?? data.playerFullName ?? "",
     sportType: sportType,
     playingYears: data.playingYears ?? data.gradRange ?? "",
     className: data.className ?? data.classGroup ?? "",
@@ -64,13 +64,19 @@ async function resolveMembers(rawMembers: any[]): Promise<TeamMember[]> {
     rawMembers.map(async (m, i) => {
       const rawImg = extractRawImageUrl(m)
       const imageUrl = await resolveImageUrl(rawImg)
+      const firstName = m.firstName ?? ""
+      const lastName = m.lastName ?? ""
+      const combinedName = m.fullName ?? m.name ?? (
+        firstName || lastName ? [firstName, lastName].filter(Boolean).join(" ") : ""
+      )
       return {
         id: m.id ?? `m_${i}`,
-        fullName: m.fullName ?? m.firstName ?? m.name ?? "",
+        fullName: combinedName,
         heightCm: m.heightCm ?? m.height ?? undefined,
         sportRank: m.sportRank ?? m.rank ?? "",
-        position: m.position ?? m.job ?? m.role ?? "",
+        position: m.position ?? m.role ?? "",
         personalNumber: m.personalNumber ?? m.registerNo ?? m.number ?? "",
+        profession: m.profession ?? m.occupation ?? m.job ?? "",
         imageUrl,
       }
     })
@@ -86,8 +92,7 @@ export function useTeamRequests(sportType: string = 'Сагсан бөмбөг')
     const collectionName = sportToCollectionMap[sportType] || 'basketball'
 
     const q = query(
-      collection(db, collectionName),
-      orderBy('createdAt', 'desc')
+      collection(db, collectionName)
     )
 
     const unsubscribe = onSnapshot(
