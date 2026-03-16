@@ -5,7 +5,7 @@ import { toast } from "sonner"
 import * as XLSX from "xlsx"
 import { IconDownload, IconLoader2 } from "@tabler/icons-react"
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage"
-import { doc, updateDoc, addDoc, collection as firestoreCollection, serverTimestamp } from "firebase/firestore"
+import { doc, updateDoc, addDoc, deleteDoc, collection as firestoreCollection, serverTimestamp } from "firebase/firestore"
 import { db, storage, auth } from "@/lib/firebase"
 
 import { Button } from "@/components/ui/button"
@@ -541,12 +541,14 @@ export function TeamRequestsPage({
         await setStatus(pendingAction.id, "rejected")
         toast.message("Хүсэлтийг татгалзлаа")
       } else {
+        const req = rows.find((r) => r.id === pendingAction.id)
+        const collectionName = req ? (SPORT_COLLECTION[req.sportType] ?? SPORT_COLLECTION[sportFilter ?? ""] ?? "basketball") : "basketball"
+        await deleteDoc(doc(db, collectionName, pendingAction.id))
         remove(pendingAction.id)
-        return
       }
     } catch (err: any) {
-      console.error("setStatus error:", err?.code, err?.message, err)
-      toast.error(`Төлөв өөрчлөхд алдаа: ${err?.code ?? err?.message ?? "тодорхгүй"}`)
+      console.error("confirmAction error:", err?.code, err?.message, err)
+      toast.error(`Үйлдэл гүйцэтгэхэд алдаа: ${err?.code ?? err?.message ?? "тодорхгүй"}`)
     }
     setConfirmOpen(false)
     setPendingAction(null)
