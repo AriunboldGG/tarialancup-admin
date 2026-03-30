@@ -1295,6 +1295,19 @@ export function TeamRequestsPage({
                               placeholder="Ж: Дэд мастер"
                             />
                           </div>
+
+                          <div className="grid gap-2">
+                            <Label htmlFor={`member-${index}-profession`} className="text-xs sm:text-sm">Ажил мэргэжил</Label>
+                            <Input
+                              id={`member-${index}-profession`}
+                              value={member.profession || ""}
+                              onChange={(e) =>
+                                updateMember(index, { profession: e.target.value })
+                              }
+                              placeholder="Ж: Оюутан"
+                              className="text-sm sm:text-base"
+                            />
+                          </div>
                         </CardContent>
                       </Card>
                     ))}
