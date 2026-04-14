@@ -124,6 +124,7 @@ export function TeamRequestsPage({
   const [className, setClassName] = React.useState<string>("all")
   const [playingYearsFilter, setPlayingYearsFilter] = React.useState<string>("all")
   const [gradYearFilter, setGradYearFilter] = React.useState<string>("all")
+  const [genderFilter, setGenderFilter] = React.useState<string>("all")
 
   const [confirmOpen, setConfirmOpen] = React.useState(false)
   const [pendingAction, setPendingAction] = React.useState<{
@@ -173,6 +174,7 @@ export function TeamRequestsPage({
     const classNames = new Set<string>()
     const playingYears = new Set<string>()
     const gradYears = new Set<number>()
+    const genders = new Set<string>()
 
     for (const r of rows) {
       const info = parseClassInfo(r.className)
@@ -180,6 +182,7 @@ export function TeamRequestsPage({
       if (r.className) classNames.add(r.className)
       if (r.playingYears) playingYears.add(r.playingYears)
       if (r.graduatedYear) gradYears.add(r.graduatedYear)
+      if (r.gender) genders.add(r.gender)
     }
 
     return {
@@ -187,6 +190,7 @@ export function TeamRequestsPage({
       classNames: [...classNames].sort((a, b) => a.localeCompare(b)),
       playingYears: [...playingYears].sort((a, b) => a.localeCompare(b)),
       gradYears: [...gradYears].sort((a, b) => a - b),
+      genders: [...genders].sort((a, b) => a.localeCompare(b)),
     }
   }, [rows])
 
@@ -197,6 +201,7 @@ export function TeamRequestsPage({
     const sportValue = sportFilter === "all" || !sportFilter ? null : sportFilter
     const playingYearsValue = playingYearsFilter === "all" ? null : playingYearsFilter
     const gradYearValue = gradYearFilter === "all" ? null : Number(gradYearFilter)
+    const genderValue = genderFilter === "all" ? null : genderFilter
 
     return rows.filter((r) => {
       if (q && !r.teamName.toLowerCase().includes(q)) return false
@@ -204,11 +209,12 @@ export function TeamRequestsPage({
       if (classNameValue && r.className !== classNameValue) return false
       if (playingYearsValue && r.playingYears !== playingYearsValue) return false
       if (gradYearValue && r.graduatedYear !== gradYearValue) return false
+      if (genderValue && r.gender !== genderValue) return false
       const info = parseClassInfo(r.className)
       if (sectionValue && info.section !== sectionValue) return false
       return true
     })
-  }, [rows, teamQuery, section, className, sportFilter, playingYearsFilter, gradYearFilter])
+  }, [rows, teamQuery, section, className, sportFilter, playingYearsFilter, gradYearFilter, genderFilter])
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE))
   const pagedRows = filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -732,7 +738,7 @@ export function TeamRequestsPage({
             </div>
           </CardHeader>
           <CardContent>
-            <div className="mb-4 grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="mb-4 grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
               <div className="grid gap-1">
                 <div className="text-muted-foreground text-xs">Багийн нэр</div>
                 <Input
@@ -789,6 +795,21 @@ export function TeamRequestsPage({
                   </SelectContent>
                 </Select>
               </div>
+
+              <div className="grid gap-1">
+                <div className="text-muted-foreground text-xs">Хүйс</div>
+                <Select value={genderFilter} onValueChange={(v) => { setGenderFilter(v); setPage(1) }}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Бүгд" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Бүгд</SelectItem>
+                    {filterOptions.genders.map((g) => (
+                      <SelectItem key={g} value={g}>{g}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <div className="mb-4 flex items-center justify-end">
@@ -804,6 +825,7 @@ export function TeamRequestsPage({
                   setClassName("all")
                   setPlayingYearsFilter("all")
                   setGradYearFilter("all")
+                  setGenderFilter("all")
                   setPage(1)
                 }}
               >
