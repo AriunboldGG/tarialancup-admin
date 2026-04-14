@@ -72,6 +72,8 @@ async function resolveMembers(rawMembers: any[]): Promise<TeamMember[]> {
       return {
         id: m.id ?? `m_${i}`,
         fullName: combinedName,
+        firstName: m.firstName as string | undefined,
+        lastName: m.lastName as string | undefined,
         heightCm: m.heightCm ?? m.height ?? undefined,
         sportRank: m.sportRank ?? m.rank ?? "",
         position: m.position ?? m.role ?? "",

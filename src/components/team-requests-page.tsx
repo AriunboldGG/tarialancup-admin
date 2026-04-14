@@ -51,6 +51,8 @@ import {
 export type TeamMember = {
   id: string
   fullName: string
+  firstName?: string
+  lastName?: string
   heightCm?: number
   sportRank?: string
   position?: string
@@ -218,7 +220,13 @@ export function TeamRequestsPage({
 
   function openEdit(req: TeamRegistrationRequest) {
     setEditingRequest(req)
-    setEditForm({ ...req, members: [...(req.members || [])] })
+    const members = (req.members || []).map((m) => {
+      if (m.firstName || m.lastName) return m
+      // Split fullName into lastName / firstName for the edit form
+      const parts = m.fullName.trim().split(/\s+/)
+      return { ...m, firstName: parts[0] || "", lastName: parts.slice(1).join(" ") || "" }
+    })
+    setEditForm({ ...req, members })
     setEditOpen(true)
   }
 
@@ -469,10 +477,42 @@ export function TeamRequestsPage({
     setSaving(true)
     try {
       const collectionName = SPORT_COLLECTION[editingRequest.sportType] ?? SPORT_COLLECTION[sportFilter ?? ""] ?? "basketball"
-      // Firestore rejects undefined values — strip them from the payload
-      const cleanedMembers = (editForm.members || []).map((m) =>
-        Object.fromEntries(Object.entries({ ...m }).filter(([, v]) => v !== undefined))
-      )
+      const isTennis = collectionName === "tennis"
+
+      const cleanedMembers = (editForm.members || []).map((m, i) => {
+        // Determine format from the original Firestore member (most reliable signal):
+        // tennis records store firstName/lastName natively; basketball only stores fullName.
+        const originalMember = (editingRequest.members || [])[i]
+        const useFirstLastFormat = !!(originalMember?.firstName || originalMember?.lastName) || isTennis
+
+        if (useFirstLastFormat) {
+          // Tennis (or any sport that stores firstName/lastName separately)
+          const parts = (m.fullName || "").trim().split(/\s+/)
+          const firstName = m.firstName ?? parts[0] ?? ""
+          const lastName = m.lastName ?? parts.slice(1).join(" ") ?? ""
+          const raw: Record<string, any> = {
+            firstName,
+            lastName,
+            job: m.profession || "",
+            registerNo: m.personalNumber || "",
+            sportRank: m.sportRank || "",
+            position: m.position || "",
+          }
+          if (m.imageUrl) raw.photoUrl = m.imageUrl
+          return Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== undefined && v !== ""))
+        }
+        // Standard format (basketball / darts)
+        const combinedName = [m.firstName || "", m.lastName || ""].filter(Boolean).join(" ") || m.fullName || ""
+        const raw: Record<string, any> = {
+          fullName: combinedName,
+          sportRank: m.sportRank || "",
+          position: m.position || "",
+          personalNumber: m.personalNumber || "",
+          profession: m.profession || "",
+        }
+        if (m.imageUrl) raw.imageUrl = m.imageUrl
+        return Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== undefined && v !== ""))
+      })
       const payload = Object.fromEntries(
         Object.entries({ ...editForm, members: cleanedMembers }).filter(([, v]) => v !== undefined)
       )
@@ -1204,17 +1244,37 @@ export function TeamRequestsPage({
                           </div>
                         </CardHeader>
                         <CardContent className="grid gap-3">
-                          <div className="grid gap-2">
-                            <Label htmlFor={`member-${index}-name`} className="text-xs sm:text-sm">Овог нэр</Label>
-                            <Input
-                              id={`member-${index}-name`}
-                              value={member.fullName || ""}
-                              onChange={(e) =>
-                                updateMember(index, { fullName: e.target.value })
-                              }
-                              placeholder="Ж: Цэлмэг Алдар"
-                              className="text-sm sm:text-base"
-                            />
+                          <div className="grid gap-3">
+                            <div className="grid gap-2">
+                              <Label htmlFor={`member-${index}-firstName`} className="text-xs sm:text-sm">Нэр</Label>
+                              <Input
+                                id={`member-${index}-firstName`}
+                                value={member.firstName || ""}
+                                onChange={(e) =>
+                                  updateMember(index, {
+                                    firstName: e.target.value,
+                                    fullName: [e.target.value, member.lastName || ""].filter(Boolean).join(" "),
+                                  })
+                                }
+                                placeholder="Ж: Лхагвааням"
+                                className="text-sm sm:text-base"
+                              />
+                            </div>
+                            <div className="grid gap-2">
+                              <Label htmlFor={`member-${index}-lastName`} className="text-xs sm:text-sm">Овог</Label>
+                              <Input
+                                id={`member-${index}-lastName`}
+                                value={member.lastName || ""}
+                                onChange={(e) =>
+                                  updateMember(index, {
+                                    lastName: e.target.value,
+                                    fullName: [member.firstName || "", e.target.value].filter(Boolean).join(" "),
+                                  })
+                                }
+                                placeholder="Ж: Пүрэв-Очир"
+                                className="text-sm sm:text-base"
+                              />
+                            </div>
                           </div>
 
                           <div className="grid gap-2">
