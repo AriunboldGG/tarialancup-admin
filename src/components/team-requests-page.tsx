@@ -74,6 +74,7 @@ export type TeamRegistrationRequest = {
   members: TeamMember[]
   status: "pending" | "approved" | "rejected"
   transactionCode?: string
+  createdAt?: Date
 }
 
 function parseClassInfo(className: string | null | undefined): { grade: number | null; section: string | null } {
@@ -125,6 +126,8 @@ export function TeamRequestsPage({
   const [playingYearsFilter, setPlayingYearsFilter] = React.useState<string>("all")
   const [gradYearFilter, setGradYearFilter] = React.useState<string>("all")
   const [genderFilter, setGenderFilter] = React.useState<string>("all")
+
+  const [dateSort, setDateSort] = React.useState<"new" | "old">("new")
 
   const [confirmOpen, setConfirmOpen] = React.useState(false)
   const [pendingAction, setPendingAction] = React.useState<{
@@ -203,7 +206,7 @@ export function TeamRequestsPage({
     const gradYearValue = gradYearFilter === "all" ? null : Number(gradYearFilter)
     const genderValue = genderFilter === "all" ? null : genderFilter
 
-    return rows.filter((r) => {
+    const filtered = rows.filter((r) => {
       if (q && !r.teamName.toLowerCase().includes(q)) return false
       if (sportValue && r.sportType !== sportValue) return false
       if (classNameValue && r.className !== classNameValue) return false
@@ -214,7 +217,15 @@ export function TeamRequestsPage({
       if (sectionValue && info.section !== sectionValue) return false
       return true
     })
-  }, [rows, teamQuery, section, className, sportFilter, playingYearsFilter, gradYearFilter, genderFilter])
+
+    filtered.sort((a, b) => {
+      const ta = a.createdAt?.getTime() ?? 0
+      const tb = b.createdAt?.getTime() ?? 0
+      return dateSort === "new" ? tb - ta : ta - tb
+    })
+
+    return filtered
+  }, [rows, teamQuery, section, className, sportFilter, playingYearsFilter, gradYearFilter, genderFilter, dateSort])
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE))
   const pagedRows = filteredRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -738,7 +749,7 @@ export function TeamRequestsPage({
             </div>
           </CardHeader>
           <CardContent>
-            <div className="mb-4 grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="mb-4 grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
               <div className="grid gap-1">
                 <div className="text-muted-foreground text-xs">Багийн нэр</div>
                 <Input
@@ -810,6 +821,19 @@ export function TeamRequestsPage({
                   </SelectContent>
                 </Select>
               </div>
+
+              <div className="grid gap-1">
+                <div className="text-muted-foreground text-xs">Огноогоор эрэмбэлэх</div>
+                <Select value={dateSort} onValueChange={(v) => { setDateSort(v as "new" | "old"); setPage(1) }}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="new">Шинэ эхэнд</SelectItem>
+                    <SelectItem value="old">Хуучин эхэнд</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <div className="mb-4 flex items-center justify-end">
@@ -826,6 +850,7 @@ export function TeamRequestsPage({
                   setPlayingYearsFilter("all")
                   setGradYearFilter("all")
                   setGenderFilter("all")
+                  setDateSort("new")
                   setPage(1)
                 }}
               >

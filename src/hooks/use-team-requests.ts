@@ -42,6 +42,7 @@ function extractRawImageUrl(m: Record<string, any>): string | undefined {
 
 function mapFirestoreDocSync(id: string, data: Record<string, any>, sportType: string): Omit<TeamRegistrationRequest, 'members'> & { rawMembers: any[] } {
   const rawMembers: any[] = Array.isArray(data.members) ? data.members : []
+  const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : (data.createdAt instanceof Date ? data.createdAt : undefined)
 
   return {
     id,
@@ -55,6 +56,7 @@ function mapFirestoreDocSync(id: string, data: Record<string, any>, sportType: s
     phone: data.phone ?? data.contactPhone ?? "",
     status: data.status ?? "pending",
     transactionCode: data.transactionCode ?? data.txnCode ?? undefined,
+    createdAt,
     rawMembers,
   }
 }
