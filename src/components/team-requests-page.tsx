@@ -205,6 +205,10 @@ export function TeamRequestsPage({
     const playingYearsValue = playingYearsFilter === "all" ? null : playingYearsFilter
     const gradYearValue = gradYearFilter === "all" ? null : Number(gradYearFilter)
     const genderValue = genderFilter === "all" ? null : genderFilter
+    const genderAliases: Record<string, string[]> = {
+      "эм": ["эм", "эмэгтэй"],
+      "эр": ["эр", "эрэгтэй"],
+    }
 
     const filtered = rows.filter((r) => {
       if (q && !r.teamName.toLowerCase().includes(q)) return false
@@ -212,7 +216,10 @@ export function TeamRequestsPage({
       if (classNameValue && r.className !== classNameValue) return false
       if (playingYearsValue && r.playingYears !== playingYearsValue) return false
       if (gradYearValue && r.graduatedYear !== gradYearValue) return false
-      if (genderValue && r.gender !== genderValue) return false
+      if (genderValue) {
+        const allowed = genderAliases[genderValue] ?? [genderValue]
+        if (!allowed.includes(r.gender?.toLowerCase?.())) return false
+      }
       const info = parseClassInfo(r.className)
       if (sectionValue && info.section !== sectionValue) return false
       return true
@@ -815,9 +822,8 @@ export function TeamRequestsPage({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Бүгд</SelectItem>
-                    {filterOptions.genders.map((g) => (
-                      <SelectItem key={g} value={g}>{g}</SelectItem>
-                    ))}
+                    <SelectItem value="эм">Эмэгтэй</SelectItem>
+                    <SelectItem value="эр">Эрэгтэй</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
